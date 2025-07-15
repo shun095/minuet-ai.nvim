@@ -3,6 +3,52 @@ local common = require 'minuet.backends.common'
 local utils = require 'minuet.utils'
 local Job = require 'plenary.job'
 
+local ns_id = vim.api.nvim_create_namespace("minuet-ai-ghost")
+local prev_extmark_id = nil
+
+local function split_lines(str)
+    local t = {}
+    for line in string.gmatch(str, "([^\n]*)\n?") do
+        if line ~= "" then
+            table.insert(t, line)
+        end
+    end
+    return t
+end
+
+function M.clear_ghost_text()
+    local bufnr = vim.api.nvim_get_current_buf()
+    vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
+    prev_extmark_id = nil
+end
+
+---@param ghost string
+---@return nil
+function M.update_ghost_text(ghost)
+    local bufnr = vim.api.nvim_get_current_buf()
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local row = cursor[1] - 1
+    local col = cursor[2]
+
+    if prev_extmark_id then
+        vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
+        prev_extmark_id = nil
+    end
+
+    local lines = split_lines(ghost)
+    local virt_lines = {}
+    for _, l in ipairs(lines) do
+        table.insert(virt_lines, { { l, "Comment" } })
+    end
+
+    local extmark_id = vim.api.nvim_buf_set_extmark(bufnr, ns_id, row, col, {
+        virt_lines = virt_lines, -- highlight グループはお好みで
+        virt_lines_above = true,
+        virt_lines_overflow = 'scroll'
+    })
+    prev_extmark_id = extmark_id
+end
+
 function M.openai_get_text_fn_no_stream(json)
     return json.choices[1].message.content
 end
@@ -57,10 +103,47 @@ function M.complete_openai_base(options, context, callback)
         timestamp = timestamp,
     })
 
+    local completion_text = ""
+    vim.api.nvim_create_autocmd("InsertLeave", {
+        callback = function()
+            M.clear_ghost_text()
+            common.terminate_all_jobs()
+        end
+    })
+    -- Insert モード中に更新
+    vim.api.nvim_create_autocmd({"CursorMoved", "CursorMovedI", "InsertEnter"}, {
+        callback = function ()
+            M.clear_ghost_text()
+            common.terminate_all_jobs()
+        end,
+    })
+
     local new_job = Job:new {
         command = 'curl',
         args = args,
+        on_stdout = vim.schedule_wrap(function(error, data, self)
+            if not data then
+                return
+            end
+
+            data = data:gsub('^data:', '')
+            local success, json = pcall(vim.json.decode, data)
+
+            if not success then
+                return
+            end
+
+            if json.choices and json.choices[1].delta and json.choices[1].delta.reasoning_content and json.choices[1].delta.reasoning_content ~= vim.NIL then
+                completion_text = completion_text .. json.choices[1].delta.reasoning_content
+                M.update_ghost_text(completion_text)
+            end
+            if json.choices and json.choices[1].delta and json.choices[1].delta.content and json.choices[1].delta.content ~= vim.NIL then
+                completion_text = completion_text .. json.choices[1].delta.content
+                M.update_ghost_text(completion_text)
+            end
+        end),
         on_exit = vim.schedule_wrap(function(job, exit_code)
+            M.clear_ghost_text()
             common.remove_job(job)
 
             utils.run_event('MinuetRequestFinished', {
@@ -167,11 +250,44 @@ function M.complete_openai_fim_base(options, get_text_fn, context, callback)
         timestamp = timestamp,
     })
 
+    local completion_text = ""
+    vim.api.nvim_create_autocmd("InsertLeave", {
+        callback = function()
+            M.clear_ghost_text()
+            common.terminate_all_jobs()
+        end
+    })
+    -- Insert モード中に更新
+    vim.api.nvim_create_autocmd({"CursorMoved", "CursorMovedI", "InsertEnter"}, {
+        callback = function ()
+            M.clear_ghost_text()
+            common.terminate_all_jobs()
+        end,
+    })
+
     for idx = 1, n_completions do
         local new_job = Job:new {
             command = 'curl',
             args = args,
+            on_stdout = vim.schedule_wrap(function(error, data, self)
+                if not data then
+                    return
+                end
+
+                data = data:gsub('^data:', '')
+                local success, json = pcall(vim.json.decode, data)
+
+                if not success then
+                    return
+                end
+
+                if json.choices and json.choices[1].text then
+                    completion_text = completion_text .. json.choices[1].text
+                    M.update_ghost_text(completion_text)
+                end
+            end),
             on_exit = vim.schedule_wrap(function(job, exit_code)
+                M.clear_ghost_text()
                 common.remove_job(job)
 
                 utils.run_event('MinuetRequestFinished', {

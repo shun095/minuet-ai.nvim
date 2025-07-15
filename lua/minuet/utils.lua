@@ -657,6 +657,7 @@ function M.make_curl_args(end_point, headers, data_file)
         table.insert(args, '-H')
         table.insert(args, k .. ': ' .. v)
     end
+    table.insert(args, '--no-buffer')
     table.insert(args, '--max-time')
     table.insert(args, tostring(config.request_timeout))
     table.insert(args, '-d')
