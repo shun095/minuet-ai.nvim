@@ -133,13 +133,13 @@ function M.complete_openai_base(options, context, callback)
                 return
             end
 
-            if json.choices and json.choices[1].delta and json.choices[1].delta.reasoning_content and json.choices[1].delta.reasoning_content ~= vim.NIL then
-                completion_text = completion_text .. json.choices[1].delta.reasoning_content
-                M.update_ghost_text(completion_text)
-            end
-            if json.choices and json.choices[1].delta and json.choices[1].delta.content and json.choices[1].delta.content ~= vim.NIL then
-                completion_text = completion_text .. json.choices[1].delta.content
-                M.update_ghost_text(completion_text)
+            if json.choices and #json.choices > 0 and json.choices[1].delta then
+                if json.choices[1].delta.reasoning_content and json.choices[1].delta.reasoning_content ~= vim.NIL then
+                    M.update_ghost_text(completion_text)
+                elseif json.choices[1].delta.content and json.choices[1].delta.content ~= vim.NIL then
+                    completion_text = completion_text .. json.choices[1].delta.content
+                    M.update_ghost_text(completion_text)
+                end
             end
         end),
         on_exit = vim.schedule_wrap(function(job, exit_code)
