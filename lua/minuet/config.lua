@@ -333,6 +333,7 @@ M.provider_options = {
     openai = {
         model = 'gpt-4.1-mini',
         api_key = 'OPENAI_API_KEY',
+        end_point = 'https://api.openai.com/v1/chat/completions',
         system = M.default_system,
         few_shots = M.default_few_shots,
         chat_input = M.default_chat_input,
@@ -343,9 +344,9 @@ M.provider_options = {
         },
     },
     claude = {
-        max_tokens = 512,
+        max_tokens = 256,
         api_key = 'ANTHROPIC_API_KEY',
-        model = 'claude-3-5-haiku-20241022',
+        model = 'claude-haiku-4-5',
         end_point = 'https://api.anthropic.com/v1/messages',
         system = M.default_system,
         chat_input = M.default_chat_input,
@@ -398,5 +399,15 @@ M.provider_options = {
 }
 
 M.presets = {}
+
+-- **List** of functions to execute. If any function returns `false`, Minuet
+-- will not trigger auto-completion. Manual completion can still be invoked,
+-- even if these functions evaluate to `false`, when using `nvim-cmp`,
+-- `blink-cmp`, or virtual text (excluding LSP).
+-- When this list is empty (the default), it always evaluates to `true`.
+-- Note that this is called each time Minuet attempts to trigger
+-- auto-completion, so ensure the functions in this list are highly efficient.
+---@type (fun(): boolean)[]
+M.enabled = {}
 
 return M

@@ -21,6 +21,7 @@
   - [OpenAI](#openai)
   - [Claude](#claude)
   - [Codestral](#codestral)
+  - [Mercury Coder](#mercury-coder)
   - [Gemini](#gemini)
   - [OpenAI-compatible](#openai-compatible)
   - [OpenAI-FIM-compatible](#openai-fim-compatible)
@@ -634,6 +635,14 @@ default_config = {
     before_cursor_filter_length = 2,
     -- proxy port to use
     proxy = nil,
+    -- **List** of functions to execute. If any function returns `false`, Minuet
+    -- will not trigger auto-completion. Manual completion can still be invoked,
+    -- even if these functions evaluate to `false`, when using `nvim-cmp`,
+    -- `blink-cmp`, or virtual text (excluding LSP).
+    -- When this list is empty (the default), it always evaluates to `true`.
+    -- Note that this is called each time Minuet attempts to trigger
+    -- auto-completion, so ensure the functions in this list are highly efficient.
+    enabled = {},
     provider_options = {
         -- see the documentation in each provider in the following part.
     },
@@ -731,6 +740,7 @@ the following is the default configuration for OpenAI:
 provider_options = {
     openai = {
         model = 'gpt-4.1-mini',
+        end_point = 'https://api.openai.com/v1/chat/completions',
         system = "see [Prompt] section for the default value",
         few_shots = "see [Prompt] section for the default value",
         chat_input = "See [Prompt Section for default value]",
@@ -740,9 +750,10 @@ provider_options = {
             -- pass any additional parameters you want to send to OpenAI request,
             -- e.g.
             -- stop = { 'end' },
-            -- max_tokens = 256,
+            -- max_completion_tokens = 256,
             -- top_p = 0.9,
             -- reasoning_effort = 'minimal'
+            -- reasoning_effort = 'none'
         },
     },
 }
@@ -753,13 +764,25 @@ request timeout from outputing too many tokens.
 
 ```lua
 provider_options = {
-    openai = {
-        optional = {
-            max_tokens = 256,
-        },
-    },
+	openai = {
+		optional = {
+			max_completion_tokens = 128,
+			-- for thinking models
+			reasoning_effort = "minimal",
+			-- If your chosen model supports it, you can also set this to 'none'.
+			-- reasoning_effort = 'none'
+		},
+	},
 }
 ```
+
+Note: If you intend to use GPT-5 series models (e.g., `gpt-5-mini` or
+`gpt-5-nano`), keep the following points in mind:
+
+1. Use `max_completion_tokens` instead of `max_tokens`.
+2. These models do not support `top_p` or `temperature` adjustments.
+3. Ensure `reasoning_effort` is set to `minimal` and update your request
+   options accordingly.
 
 </details>
 
@@ -772,8 +795,8 @@ the following is the default configuration for Claude:
 ```lua
 provider_options = {
     claude = {
-        max_tokens = 512,
-        model = 'claude-3-5-haiku-20241022',
+        max_tokens = 256,
+        model = 'claude-haiku-4.5',
         system = "see [Prompt] section for the default value",
         few_shots = "see [Prompt] section for the default value",
         chat_input = "See [Prompt Section for default value]",
@@ -832,6 +855,33 @@ provider_options = {
             max_tokens = 256,
             stop = { '\n\n' },
         },
+    },
+}
+```
+
+</details>
+
+## Mercury Coder
+
+Developed by Inception, Mercury Coder is described as a diffusion-based large
+language model that accelerates code generation through iterative refinement
+rather than autoregressive token prediction. According to the claim, this
+approach is intended to deliver faster and more efficient code completions. To
+begin, obtain an API key from the Inception Platform and configure it as the
+`INCEPTION_API_KEY` environment variable.
+
+<details>
+
+You can access Mercury Coder via the OpenAI compatible FIM endpoint using the
+following configuration:
+
+```lua
+provider_options = {
+    openai_fim_compatible = {
+        model = "mercury-coder",
+        end_point = "https://api.inceptionlabs.ai/v1/fim/completions",
+        api_key = "INCEPTION_API_KEY", -- environment variable name
+        stream = true,
     },
 }
 ```
@@ -1501,7 +1551,7 @@ available in [recipes.md](./recipes.md).
 
 For detailed instructions on setting up and using VectorCode, please refer to the
 [official VectorCode
-documentation](https://github.com/Davidyz/VectorCode/blob/main/docs/neovim.md).
+documentation](https://github.com/Davidyz/VectorCode/tree/main/docs/neovim).
 
 # Troubleshooting
 

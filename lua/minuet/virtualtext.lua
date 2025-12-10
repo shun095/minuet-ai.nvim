@@ -71,12 +71,42 @@ local function get_ctx(bufnr)
     return ctx
 end
 
----@alias minuet_suggestions_context { suggestions?: string[], choice?: integer, shown_choices?: table<string, true> }
+---@return string[]?
+local function get_last_typed_text(ctx)
+    ctx = ctx or get_ctx()
+    local last_typed = nil
+    local last_pos = ctx.last_pos
+    if not last_pos then
+        return { '' }
+    end
+
+    local current_pos = api.nvim_win_get_cursor(0)
+
+    -- Convert 1-based line to 0-based for nvim_buf_get_text
+    local start_row = last_pos[1] - 1
+    local start_col = last_pos[2]
+    local end_row = current_pos[1] - 1
+    local end_col = current_pos[2]
+
+    if start_row <= end_row and start_col <= end_col then
+        last_typed = api.nvim_buf_get_text(0, start_row, start_col, end_row, end_col, {})
+    end
+
+    return last_typed
+end
+
+---@class minuet_suggestions_context
+---@field suggestions? string[]
+---@field choice? integer
+---@field shown_choices? table<string, true>
+---@field last_pos integer[]
+
 ---@param ctx? minuet_suggestions_context
 local function reset_ctx(ctx)
     ctx.suggestions = nil
     ctx.choice = nil
     ctx.shown_choices = nil
+    ctx.last_pos = nil
 end
 
 local function stop_timer()
@@ -161,6 +191,8 @@ local function update_preview(ctx)
     if not ctx.shown_choices[suggestion] then
         ctx.shown_choices[suggestion] = true
     end
+
+    ctx.last_pos = api.nvim_win_get_cursor(0)
 end
 
 ---@param ctx? minuet_suggestions_context
@@ -236,7 +268,11 @@ local function schedule()
     internal.timer = vim.defer_fn(function()
         local show_on_completion_menu = require('minuet').config.virtualtext.show_on_completion_menu
 
-        if internal.is_on_throttle or (not show_on_completion_menu and completion_menu_visible()) then
+        if
+            internal.is_on_throttle
+            or (not show_on_completion_menu and completion_menu_visible())
+            or (not utils.run_hooks_until_failure(config.enabled))
+        then
             return
         end
 
@@ -283,7 +319,7 @@ function action.accept(n_lines)
     local ctx = get_ctx()
 
     local suggestion = get_current_suggestion(ctx)
-    if not suggestion or vim.fn.empty(suggestion) == 1 then
+    if not suggestion then
         return
     end
 
@@ -392,6 +428,28 @@ end
 
 function autocmd.on_cursor_moved_i()
     local ctx = get_ctx()
+
+    if ctx and ctx.suggestions and ctx.choice then
+        local last_typed_text = get_last_typed_text()
+        if
+            last_typed_text
+            and #last_typed_text == 1
+            and #last_typed_text[1] > 0
+            and last_typed_text[1] == ctx.suggestions[ctx.choice]:sub(1, #last_typed_text[1])
+        then
+            local typed = last_typed_text[1]
+            for i, suggestion in ipairs(ctx.suggestions) do
+                if suggestion:sub(1, #typed) == typed then
+                    ctx.suggestions[i] = suggestion:sub(#typed + 1, -1)
+                else
+                    ctx.suggestions[i] = ''
+                end
+            end
+            update_preview()
+            return
+        end
+    end
+
     -- we don't cleanup immediately if the completion has arrived but not
     -- display yet.
     if ctx.shown_choices and next(ctx.shown_choices) then
