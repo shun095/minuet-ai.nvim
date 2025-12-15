@@ -68,6 +68,11 @@ Just as dancers move during a minuet.
 - Support `virtual-text`, `nvim-cmp`, `blink-cmp`, `built-in`,
   `mini.completion` frontend.
 - Act as an **in-process LSP** server to provide completions (opt-in feature).
+- Accept completions continuously, one line at a time, so longer suggestions
+  can be pulled in incrementally.
+- When your typed text matches the start of a suggestion, Minuet keeps the
+  completion in sync of your typed text instead of clearing it, to avoid unnecessary
+  LLM requests and conserving resources.
 
 **With nvim-cmp / blink-cmp frontend**:
 
@@ -80,6 +85,11 @@ Just as dancers move during a minuet.
 **With virtual text frontend**:
 
 ![example-virtual-text](./assets/example-virtual-text.png)
+
+https://github.com/user-attachments/assets/e0c4f2bd-0361-45b4-8eb4-0f49356bd7d9
+
+<!-- The link above is a showcase video for the virtual text feature, hosted -->
+<!-- externally on GitHub. -->
 
 # Requirements
 
@@ -479,12 +489,12 @@ computing power, please refer to [recipes.md](./recipes.md).
 
 # Selecting a Provider or Model
 
-The `gemini-2.0-flash` and `codestral` models offer high-quality output with free
-and fast processing. For optimal quality (albeit slower generation speed),
-consider using the `deepseek-chat` model, which is compatible with both
-`openai-fim-compatible` and `openai-compatible` providers. For local LLM
-inference, you can deploy either `qwen-2.5-coder` or `deepseek-coder-v2` through
-Ollama using the `openai-fim-compatible` provider.
+The `gemini-2.0-flash` and `codestral` models offer high-quality output with
+free and fast processing. For optimal quality, though with significantly slower
+generation speed, consider using the `deepseek-chat` model, which is compatible
+with both `openai-fim-compatible` and `openai-compatible` providers. For local
+LLM inference, you can deploy either `qwen-2.5-coder` or `deepseek-coder-v2`
+through Ollama using the `openai-fim-compatible` provider.
 
 As of January 28, 2025: Due to high server demand, Deepseek users may
 experience significant response delays or timeout. We recommend trying
@@ -547,8 +557,8 @@ default_config = {
         enabled_auto_trigger_ft = {},
         -- Filetypes excluded from autotriggering. Useful when `enabled_auto_trigger_ft` = { '*' }
         disabled_auto_trigger_ft = {},
-        -- if true, when the user is using blink or nvim-cmp or built-in pum
-        -- menu, warn the user that they should use the native source instead.
+        -- if true, warn the user that they should use the native source
+        -- instead when the user is using blink or nvim-cmp.
         warn_on_blink_or_cmp = true,
         -- See README section [Built-in Completion, Mini.Completion, and LSP
         -- Setup] for more details on this option.
@@ -642,7 +652,7 @@ default_config = {
     -- When this list is empty (the default), it always evaluates to `true`.
     -- Note that this is called each time Minuet attempts to trigger
     -- auto-completion, so ensure the functions in this list are highly efficient.
-    enabled = {},
+    enable_predicates = {},
     provider_options = {
         -- see the documentation in each provider in the following part.
     },

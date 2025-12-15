@@ -57,7 +57,7 @@ local function completion_menu_visible()
 end
 
 ---@param bufnr? integer
----@return minuet_suggestions_context
+---@return minuet.VirtualtextSuggestionContext
 local function get_ctx(bufnr)
     bufnr = bufnr or api.nvim_get_current_buf()
     if bufnr == 0 then
@@ -88,20 +88,20 @@ local function get_last_typed_text(ctx)
     local end_row = current_pos[1] - 1
     local end_col = current_pos[2]
 
-    if start_row <= end_row and start_col <= end_col then
+    if start_row < end_row or (start_row == end_row and start_col <= end_col) then
         last_typed = api.nvim_buf_get_text(0, start_row, start_col, end_row, end_col, {})
     end
 
     return last_typed
 end
 
----@class minuet_suggestions_context
+---@class minuet.VirtualtextSuggestionContext
 ---@field suggestions? string[]
 ---@field choice? integer
 ---@field shown_choices? table<string, true>
 ---@field last_pos integer[]
 
----@param ctx? minuet_suggestions_context
+---@param ctx minuet.VirtualtextSuggestionContext
 local function reset_ctx(ctx)
     ctx.suggestions = nil
     ctx.choice = nil
@@ -121,7 +121,7 @@ local function clear_preview()
     api.nvim_buf_del_extmark(0, internal.ns_id, internal.extmark_id)
 end
 
----@param ctx? minuet_suggestions_context
+---@param ctx? minuet.VirtualtextSuggestionContext
 local function get_current_suggestion(ctx)
     ctx = ctx or get_ctx()
 
@@ -142,7 +142,7 @@ local function get_current_suggestion(ctx)
     return nil
 end
 
----@param ctx? minuet_suggestions_context
+---@param ctx? minuet.VirtualtextSuggestionContext
 local function update_preview(ctx)
     ctx = ctx or get_ctx()
 
@@ -195,12 +195,42 @@ local function update_preview(ctx)
     ctx.last_pos = api.nvim_win_get_cursor(0)
 end
 
----@param ctx? minuet_suggestions_context
+---@param ctx? minuet.VirtualtextSuggestionContext
 local function cleanup(ctx)
     ctx = ctx or get_ctx()
     stop_timer()
     reset_ctx(ctx)
     clear_preview()
+end
+
+---@param ctx minuet.VirtualtextSuggestionContext
+---@return boolean Returns true if there are suggestions matching the user’s typed text; otherwise, false.
+local function update_suggestion_on_typing(ctx)
+    if not (ctx and ctx.suggestions and ctx.choice) then
+        return false
+    end
+
+    local last_typed_text = get_last_typed_text()
+    if not (last_typed_text and #last_typed_text > 0) then
+        return false
+    end
+
+    local typed = table.concat(last_typed_text, '\n')
+    if #typed == 0 or typed ~= ctx.suggestions[ctx.choice]:sub(1, #typed) then
+        return false
+    end
+
+    for i, suggestion in ipairs(ctx.suggestions) do
+        if suggestion:sub(1, #typed) == typed then
+            ctx.suggestions[i] = suggestion:sub(#typed + 1, -1)
+        else
+            ctx.suggestions[i] = ''
+        end
+    end
+
+    update_preview(ctx)
+    stop_timer()
+    return true
 end
 
 local function trigger(bufnr)
@@ -271,7 +301,7 @@ local function schedule()
         if
             internal.is_on_throttle
             or (not show_on_completion_menu and completion_menu_visible())
-            or (not utils.run_hooks_until_failure(config.enabled))
+            or (not utils.run_hooks_until_failure(config.enable_predicates))
         then
             return
         end
@@ -324,20 +354,34 @@ function action.accept(n_lines)
     end
 
     local suggestions = vim.split(suggestion, '\n')
+    local remaining_suggestions = {}
 
     if n_lines then
+        -- NOTE: If the first line is an empty string (""), it indicates that
+        -- the original suggestion began with a newline character. This
+        -- typically occurs during partial completion: when the user accepts
+        -- the first line, the remaining suggestion may start with '\n'. In
+        -- this scenario, we increment n_lines by 1 because the user intends to
+        -- accept the next visible line of text, which corresponds to the
+        -- subsequent element in the suggestions list.
+        if suggestions[1] == '' then
+            n_lines = n_lines + 1
+        end
         n_lines = math.min(n_lines, #suggestions)
+        remaining_suggestions = vim.list_slice(suggestions, n_lines + 1, #suggestions)
         suggestions = vim.list_slice(suggestions, 1, n_lines)
     end
 
-    reset_ctx(ctx)
+    if #remaining_suggestions <= 0 then
+        reset_ctx(ctx)
+    end
 
     clear_preview()
 
     local cursor = api.nvim_win_get_cursor(0)
     local line, col = cursor[1] - 1, cursor[2]
 
-    vim.schedule_wrap(function()
+    vim.schedule(function()
         api.nvim_buf_set_text(0, line, col, line, col, suggestions)
         local new_col = vim.fn.strcharlen(suggestions[#suggestions])
         -- For single-line suggestions, adjust the column position by adding the
@@ -346,7 +390,7 @@ function action.accept(n_lines)
             new_col = new_col + col
         end
         api.nvim_win_set_cursor(0, { line + #suggestions, new_col })
-    end)()
+    end)
 end
 
 function action.accept_n_lines()
@@ -358,6 +402,7 @@ function action.accept_n_lines()
 
     vim.api.nvim_win_set_cursor(0, cursor_pos)
 
+    ---@diagnostic disable-next-line:cast-local-type
     n = tonumber(n)
     if not n then
         return
@@ -429,25 +474,8 @@ end
 function autocmd.on_cursor_moved_i()
     local ctx = get_ctx()
 
-    if ctx and ctx.suggestions and ctx.choice then
-        local last_typed_text = get_last_typed_text()
-        if
-            last_typed_text
-            and #last_typed_text == 1
-            and #last_typed_text[1] > 0
-            and last_typed_text[1] == ctx.suggestions[ctx.choice]:sub(1, #last_typed_text[1])
-        then
-            local typed = last_typed_text[1]
-            for i, suggestion in ipairs(ctx.suggestions) do
-                if suggestion:sub(1, #typed) == typed then
-                    ctx.suggestions[i] = suggestion:sub(#typed + 1, -1)
-                else
-                    ctx.suggestions[i] = ''
-                end
-            end
-            update_preview()
-            return
-        end
+    if update_suggestion_on_typing(ctx) then
+        return
     end
 
     -- we don't cleanup immediately if the completion has arrived but not

@@ -193,8 +193,8 @@ local M = {
         enabled_auto_trigger_ft = {},
         -- Filetypes excluded from autotriggering. Useful when `enabled_auto_trigger_ft` = { '*' }
         disabled_auto_trigger_ft = {},
-        -- if true, when the user is using blink or nvim-cmp or built-in pum
-        -- menu, warn the user that they should use the native source instead.
+        -- if true, warn the user that they should use the native source
+        -- instead when the user is using blink or nvim-cmp.
         warn_on_blink_or_cmp = true,
         -- See README section [Built-in Completion, Mini.Completion, and LSP
         -- Setup] for more details on this option.
@@ -408,6 +408,6 @@ M.presets = {}
 -- Note that this is called each time Minuet attempts to trigger
 -- auto-completion, so ensure the functions in this list are highly efficient.
 ---@type (fun(): boolean)[]
-M.enabled = {}
+M.enable_predicates = {}
 
 return M
